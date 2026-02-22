@@ -34,9 +34,8 @@ function M.create_branch()
 
 	local parent_dir = dir .. "/" .. repo_name .. "/" .. branch_name
 
-	vim.fn.mkdir(parent_dir, "p")
 	local file_path = parent_dir .. "/" .. file_name
-	vim.cmd("write! " .. file_path)
+	vim.cmd("write! ++p " .. file_path)
 
 	return file_path
 end
@@ -59,9 +58,8 @@ function M.create_filetype()
 
 	local parent_dir = dir .. "/filetype/" .. extension
 
-	vim.fn.mkdir(parent_dir, "p")
 	local file_path = parent_dir .. "/" .. file_name
-	vim.cmd("write! " .. file_path)
+	vim.cmd("write! ++p " .. file_path)
 
 	return file_path
 end
@@ -77,9 +75,8 @@ function M.create_misc()
 	end
 	local dir = get_dir()
 
-	vim.fn.mkdir(dir, "p")
 	local file_path = dir .. "/misc/" .. file_name
-	vim.cmd("write! " .. file_path)
+	vim.cmd("write! ++p " .. file_path)
 
 	return file_path
 end
@@ -97,7 +94,6 @@ function M.list_branch_files()
 	local parent_dir = dir .. "/" .. repo_name .. "/" .. branch_name
 
 	vim.fn.mkdir(parent_dir, "p")
-
 	require("fzf-lua").files({
 		cwd = parent_dir,
 		prompt = repo_name .. "/" .. branch_name .. "/",
