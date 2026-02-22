@@ -1,121 +1,180 @@
-local utils = require("utils")
-local config = require("scribble.config")
+local git = require("git")
 
 local M = {}
 
----@class scribble.Config
----@field scope 'branch' | 'repo' | 'global'?
----@field storage_dir string?
----@field previewer 'bat' | 'cat'?
-
----@class scribble.File
----@field storage_dir string
----@field directory string
----@field path string
-
----@type scribble.Config
-local default_config = {
-	scope = "branch",
-	storage_dir = "~/.local/share/scribble/storage",
-	previewer = "bat",
-}
-
----@class scribble.CreateArgs
----@field filename string
-
----@param args scribble.CreateArgs
-function M.create(args)
-	local directory = utils.get_directory(config)
-
-	local cmd = { "scribble", "create", args.filename }
-
-	if directory then
-		table.insert(cmd, "--directory")
-		table.insert(cmd, directory)
-	end
-
-	if config.storage_dir then
-		table.insert(cmd, "--storage-dir")
-		table.insert(cmd, config.storage_dir)
-	end
-
-	utils.exec_cmd(cmd)
+local get_dir = function()
+	return vim.g.scribble_dir or vim.fn.stdpath("data") .. "/scribble"
 end
 
-function M.select()
-	local directory = utils.get_directory(config)
-	local cmd = { "scribble", "list", "--porcelain" }
-
-	if directory then
-		table.insert(cmd, "--directory")
-		table.insert(cmd, directory)
+---@param str string
+local get_user_input = function(str)
+	local input = vim.fn.input(str)
+	if input == "" or input == nil then
+		return
 	end
 
-	if config.storage_dir then
-		table.insert(cmd, "--storage-dir")
-		table.insert(cmd, config.storage_dir)
+	return input:gsub("%s+", "_")
+end
+
+M.get_dir = get_dir
+
+function M.create_branch()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local file_name = get_user_input("File name: ")
+	if file_name == "" or file_name == nil then
+		return
+	end
+	local dir = get_dir()
+
+	local repo_name = git.get_repo_name()
+	local branch_name = git.get_branch_name()
+
+	local parent_dir = dir .. "/" .. repo_name .. "/" .. branch_name
+
+	vim.fn.mkdir(parent_dir, "p")
+	local file_path = parent_dir .. "/" .. file_name
+	vim.cmd("write! " .. file_path)
+
+	return file_path
+end
+
+function M.create_filetype()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local file_name = get_user_input("File name: ")
+	if file_name == "" or file_name == nil then
+		return
+	end
+	local dir = get_dir()
+	local extension = string.match(file_name, "%.(.+)$")
+
+	if not extension then
+		return
 	end
 
-	local actions = require("fzf-lua.actions")
-	require("fzf-lua").fzf_exec(utils.format_cmd(cmd), {
-		actions = {
-			["default"] = actions.file_edit,
-			["alt-s"] = actions.file_split,
-			["alt-v"] = actions.file_vsplit,
-			["alt-t"] = actions.file_tabedit,
-		},
-		prompt = directory .. "/",
-		cwd = config.storage_dir .. "/" .. directory,
+	local parent_dir = dir .. "/filetype/" .. extension
+
+	vim.fn.mkdir(parent_dir, "p")
+	local file_path = parent_dir .. "/" .. file_name
+	vim.cmd("write! " .. file_path)
+
+	return file_path
+end
+
+function M.create_misc()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local file_name = get_user_input("File name: ")
+	if file_name == "" or file_name == nil then
+		return
+	end
+	local dir = get_dir()
+
+	vim.fn.mkdir(dir, "p")
+	local file_path = dir .. "/misc/" .. file_name
+	vim.cmd("write! " .. file_path)
+
+	return file_path
+end
+
+function M.list_branch_files()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local dir = get_dir()
+
+	local repo_name = git.get_repo_name()
+	local branch_name = git.get_branch_name()
+
+	local parent_dir = dir .. "/" .. repo_name .. "/" .. branch_name
+
+	vim.fn.mkdir(parent_dir, "p")
+
+	require("fzf-lua").files({
+		cwd = parent_dir,
+		prompt = repo_name .. "/" .. branch_name .. "/",
 		winopts = {
-			title = "Scratch files",
+			titile = "Scratch Files",
 		},
-		fn_transform = function(item)
-			return string.gsub(item, "%s+", "/")
-		end,
-		previewer = config.previewer,
+		hidden = true,
 	})
 end
 
-local setup_usercmds = function()
-	vim.api.nvim_create_user_command("ScribbleCreate", function(opts)
-		local filename = opts.fargs[1] or vim.fn.input("Filename: ")
-		M.create({ filename = filename })
-	end, { nargs = "?" })
+function M.list_all_files()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local dir = get_dir()
 
-	vim.api.nvim_create_user_command("ScribbleSelect", function()
-		M.select()
-	end, { nargs = 0 })
+	require("fzf-lua").files({
+		cwd = dir,
+		prompt = dir .. "/",
+		winopts = {
+			titile = "All Scratch Files",
+		},
+		hidden = true,
+	})
 end
 
----@param user_config scribble.Config?
-function M.setup(user_config)
-	config = vim.tbl_deep_extend("force", default_config, user_config or {})
-	setup_usercmds()
+function M.list_filetype_files()
+	if not git.is_git_repo() then
+		vim.notify("Not a git repository", vim.log.levels.ERROR)
+		return
+	end
+	local dir = get_dir()
+	local extension = get_user_input("Filetype: ")
+
+	if extension == "" or extension == nil then
+		vim.notify("Invalid filetype", vim.log.levels.ERROR)
+		return
+	end
+
+	require("fzf-lua").files({
+		cwd = dir .. "/filetype/" .. extension,
+		prompt = "filetype/",
+		winopts = {
+			titile = "Filetype Scratch Files",
+		},
+		hidden = true,
+	})
 end
 
----@param file_path string
-function M.create_scratch_buf(file_path)
-	local buf = vim.api.nvim_create_buf(false, true) -- not listed, scratch
+function M.setup_usercmds()
+	vim.api.nvim_create_user_command("ScribbleCreateBranch", function()
+		local file_path = M.create_branch()
+		vim.cmd("edit " .. file_path)
+	end, {})
+	vim.api.nvim_create_user_command("ScribbleCreateFiletype", function()
+		local file_path = M.create_filetype()
+		vim.cmd("edit " .. file_path)
+	end, {})
+	vim.api.nvim_create_user_command("ScribbleCreateMisc", function()
+		local file_path = M.create_misc()
+		vim.cmd("edit " .. file_path)
+	end, {})
 
-	vim.api.nvim_buf_call(buf, function()
-		vim.cmd(":edit " .. file_path)
-	end)
+	vim.api.nvim_create_user_command("ScribbleListBranch", function()
+		M.list_branch_files()
+	end, {})
+	vim.api.nvim_create_user_command("ScribbleListAll", function()
+		M.list_all_files()
+	end, {})
+	vim.api.nvim_create_user_command("ScribbleListFiletype", function()
+		M.list_filetype_files()
+	end, {})
+end
 
-	local floating_winopts = {
-		relative = "editor",
-		width = 60,
-		height = 10,
-		row = 10,
-		col = 10,
-		style = "minimal",
-		border = "rounded",
-	}
-	vim.api.nvim_open_win(buf, true, floating_winopts)
-
-	local opts = { noremap = true, silent = true, buffer = buf }
-
-	local set = vim.keymap.set
-	set("n", "q", ":wq<cr>", opts)
+function M.setup()
+	M.setup_usercmds()
 end
 
 return M
