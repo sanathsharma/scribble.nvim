@@ -5,7 +5,8 @@ local git = require("git")
 -- ---------------------------------------------------------------------------------------------------------------------
 
 local get_dir = function()
-	return vim.g.scribble_dir or vim.fn.stdpath("data") .. "/scribble"
+	local dir = vim.g.scribble_dir or vim.fn.stdpath("data") .. "/scribble"
+	return vim.fn.expand(dir)
 end
 
 ---@param str string
