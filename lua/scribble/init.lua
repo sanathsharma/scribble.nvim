@@ -1,6 +1,8 @@
 local git = require("git")
 
-local M = {}
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------------------------------------------------
 
 local get_dir = function()
 	return vim.g.scribble_dir or vim.fn.stdpath("data") .. "/scribble"
@@ -16,9 +18,87 @@ local get_user_input = function(str)
 	return input:gsub("%s+", "_")
 end
 
+---@return boolean
+local is_visual_mode = function()
+	local mode = vim.fn.mode()
+	return mode == "v" or mode == "V" or mode == "\22"
+end
+
+---@class Range
+---@field start table
+---@field end table
+
+---@param opts vim.api.keyset.create_user_command.command_args
+---@return Range | nil
+local compute_range = function(opts)
+	local start_line_idx, end_line_idx
+
+	-- Check if called from visual mode
+	if is_visual_mode() then
+		-- Visual mode: use '< and '> marks
+		local vstart = vim.fn.getpos("'<'")
+		local vend = vim.fn.getpos("'>'")
+		start_line_idx = vstart[2] -- 1-indexed line
+		end_line_idx = vend[2] -- 1-indexed line
+	else
+		-- Normal mode: use opts.line1 and opts.line2
+		start_line_idx = opts.line1
+		end_line_idx = opts.line2
+	end
+
+	local range = nil
+	if opts.count ~= -1 then
+		local end_line = vim.api.nvim_buf_get_lines(0, end_line_idx - 1, end_line_idx, true)[1]
+		range = {
+			start = { start_line_idx, 0 },
+			["end"] = { end_line_idx, end_line:len() },
+		}
+	end
+
+	return range
+end
+
+---@param range Range | nil
+---@return string[]
+local get_lines = function(range)
+	if range == nil then
+		return {}
+	end
+	local start_line = range.start[1]
+	local end_line = range["end"][1]
+	local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, true)
+	vim.print(lines)
+	return lines
+end
+
+---@param file_path string
+local create_file = function(file_path)
+	local parent_dir = vim.fs.dirname(file_path)
+
+	vim.fn.system("mkdir -p " .. parent_dir)
+	vim.cmd("edit " .. file_path)
+	vim.cmd("write")
+end
+
+---@param file_path string
+---@param range Range
+local write_file = function(file_path, range)
+	local lines = get_lines(range)
+	vim.cmd("edit " .. file_path)
+	vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+	vim.cmd("write")
+end
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Exports
+-- ---------------------------------------------------------------------------------------------------------------------
+
+local M = {}
+
 M.get_dir = get_dir
 
-function M.create_branch()
+---@param range Range | nil
+function M.create_branch(range)
 	if not git.is_git_repo() then
 		vim.notify("Not a git repository", vim.log.levels.ERROR)
 		return
@@ -35,12 +115,16 @@ function M.create_branch()
 	local parent_dir = dir .. "/" .. repo_name .. "/" .. branch_name
 
 	local file_path = parent_dir .. "/" .. file_name
-	vim.cmd("write! ++p " .. file_path)
+	create_file(file_path)
+	if range ~= nil and is_visual_mode() then
+		write_file(file_path, range)
+	end
 
 	return file_path
 end
 
-function M.create_filetype()
+---@param range Range | nil
+function M.create_filetype(range)
 	if not git.is_git_repo() then
 		vim.notify("Not a git repository", vim.log.levels.ERROR)
 		return
@@ -59,12 +143,16 @@ function M.create_filetype()
 	local parent_dir = dir .. "/filetype/" .. extension
 
 	local file_path = parent_dir .. "/" .. file_name
-	vim.cmd("write! ++p " .. file_path)
+	create_file(file_path)
+	if range ~= nil and is_visual_mode() then
+		write_file(file_path, range)
+	end
 
 	return file_path
 end
 
-function M.create_misc()
+---@param range Range | nil
+function M.create_misc(range)
 	if not git.is_git_repo() then
 		vim.notify("Not a git repository", vim.log.levels.ERROR)
 		return
@@ -76,7 +164,10 @@ function M.create_misc()
 	local dir = get_dir()
 
 	local file_path = dir .. "/misc/" .. file_name
-	vim.cmd("write! ++p " .. file_path)
+	create_file(file_path)
+	if range ~= nil and is_visual_mode() then
+		write_file(file_path, range)
+	end
 
 	return file_path
 end
@@ -145,18 +236,21 @@ function M.list_filetype_files()
 end
 
 function M.setup_usercmds()
-	vim.api.nvim_create_user_command("ScribbleCreateBranch", function()
-		local file_path = M.create_branch()
+	vim.api.nvim_create_user_command("ScribbleCreateBranch", function(opts)
+		local range = compute_range(opts)
+		local file_path = M.create_branch(range)
 		vim.cmd("edit " .. file_path)
-	end, {})
-	vim.api.nvim_create_user_command("ScribbleCreateFiletype", function()
-		local file_path = M.create_filetype()
+	end, { range = true })
+	vim.api.nvim_create_user_command("ScribbleCreateFiletype", function(opts)
+		local range = compute_range(opts)
+		local file_path = M.create_filetype(range)
 		vim.cmd("edit " .. file_path)
-	end, {})
-	vim.api.nvim_create_user_command("ScribbleCreateMisc", function()
-		local file_path = M.create_misc()
+	end, { range = true })
+	vim.api.nvim_create_user_command("ScribbleCreateMisc", function(opts)
+		local range = compute_range(opts)
+		local file_path = M.create_misc(range)
 		vim.cmd("edit " .. file_path)
-	end, {})
+	end, { range = true })
 
 	vim.api.nvim_create_user_command("ScribbleListBranch", function()
 		M.list_branch_files()
