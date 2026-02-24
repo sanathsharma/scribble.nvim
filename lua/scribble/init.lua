@@ -173,6 +173,38 @@ function M.create_misc(range)
 	return file_path
 end
 
+---@param range Range | nil
+function M.create(range)
+	require("fzf-lua").fzf_exec({
+		"on Branch level",
+		"on Filetype level",
+		"as Misc.",
+	}, {
+		prompt = "Create scratch: ",
+		winopts = {
+			titile = "Create Scratch Files",
+			fullscreen = false,
+			height = 0.3,
+			width = 0.3,
+		},
+		fzf_opts = {
+			["--multi"] = false,
+			["--preview-window"] = "up:50%",
+		},
+		actions = {
+			["default"] = function(selected)
+				if selected[1] == "on Branch level" then
+					M.create_branch(range)
+				elseif selected[1] == "on Filetype level" then
+					M.create_filetype(range)
+				elseif selected[1] == "as Misc." then
+					M.create_misc(range)
+				end
+			end,
+		},
+	})
+end
+
 function M.list_branch_files()
 	if not git.is_git_repo() then
 		vim.notify("Not a git repository", vim.log.levels.ERROR)
@@ -251,6 +283,10 @@ function M.setup_usercmds()
 		local range = compute_range(opts)
 		local file_path = M.create_misc(range)
 		vim.cmd("edit " .. file_path)
+	end, { range = true })
+	vim.api.nvim_create_user_command("ScribbleCreate", function(opts)
+		local range = compute_range(opts)
+		M.create(range)
 	end, { range = true })
 
 	vim.api.nvim_create_user_command("ScribbleListBranch", function()
